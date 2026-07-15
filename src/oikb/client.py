@@ -124,6 +124,19 @@ class OikbClient:
         resp.raise_for_status()
         return resp.json()
 
+    def list_knowledge_bases(self) -> list[dict[str, Any]]:
+        """GET /knowledge/ — list all Knowledge Bases the user can access.
+
+        Each item includes at least ``id`` and ``name``.
+        """
+        resp = self._http.get("/knowledge/")
+        resp.raise_for_status()
+        data = resp.json()
+        # Open WebUI returns a bare list; be defensive about a wrapped shape.
+        if isinstance(data, dict):
+            data = data.get("knowledge") or data.get("data") or []
+        return data if isinstance(data, list) else []
+
     def get_kb(self, kb_id: str) -> dict[str, Any]:
         """GET /knowledge/{id} — get KB info."""
         resp = self._http.get(f"/knowledge/{kb_id}")

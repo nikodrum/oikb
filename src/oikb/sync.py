@@ -38,6 +38,13 @@ class SyncResult:
     dirs_created: int = 0
     dirs_removed: int = 0
     errors: list[str] | None = None
+    # Funnel counts — how many files the source produced vs. how many were
+    # dropped before ever reaching the upload step. Used by the GUI to explain
+    # why "N files found" differs from "M files uploaded".
+    found: int = 0
+    skipped_filter: int = 0
+    # Per-extension breakdown: {".pdf": {"found": N, "uploaded": N, "failed": N}}.
+    by_ext: dict[str, dict[str, int]] | None = None
 
     @property
     def total_changes(self) -> int:
@@ -117,6 +124,14 @@ def build_manifest_filter(
     return _filter
 
 
+def _file_ext(filename: str) -> str:
+    """Lowercased extension including the dot, or a placeholder if none."""
+    dot = filename.rfind(".")
+    if dot > 0:
+        return filename[dot:].lower()
+    return "(без розширення)"
+
+
 def _fmt_size(n: int) -> str:
     """Format bytes as a human-readable string."""
     for unit in ("B", "KB", "MB", "GB"):
@@ -135,6 +150,7 @@ def run_sync(
     quiet: bool = False,
     manifest_filter: Callable[[list[ManifestEntry]], list[ManifestEntry]] | None = None,
     concurrency: int = 1,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> SyncResult:
     """Execute a full incremental sync.
 
@@ -145,6 +161,9 @@ def run_sync(
       4. Cleanup stale files (delete before upload)
       5. Create missing directories
       6. Upload added + modified files
+
+    ``progress_callback(done, total)`` is invoked after each file upload — used
+    by non-terminal front-ends (the GUI) that can't show the rich progress bar.
     """
     result = SyncResult()
     result.errors = []
@@ -152,7 +171,7 @@ def run_sync(
     try:
         return _run_sync_inner(
             client, connector, kb_id, dry_run, verbose, quiet,
-            manifest_filter, concurrency, result,
+            manifest_filter, concurrency, result, progress_callback,
         )
     finally:
         connector.close()
@@ -168,6 +187,7 @@ def _run_sync_inner(
     manifest_filter: Callable[[list[ManifestEntry]], list[ManifestEntry]] | None,
     concurrency: int,
     result: SyncResult,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> SyncResult:
     """Inner sync logic, separated for clean connector cleanup."""
     show_progress = not quiet and not dry_run
@@ -184,9 +204,12 @@ def _run_sync_inner(
         if verbose:
             click.echo(f"  {len(manifest)} files found", err=True)
 
+    result.found = len(manifest)
+
     # ── 2. Apply filter ────────────────────────────────────────
     if manifest_filter:
         manifest = manifest_filter(manifest)
+        result.skipped_filter = result.found - len(manifest)
         if show_progress:
             _console.print(f"  [dim]{len(manifest)} files after filtering[/dim]")
         elif verbose:
@@ -215,6 +238,12 @@ def _run_sync_inner(
     directory_map: dict[str, str] = diff.get("directory_map", {})
 
     result.unmodified = unmodified_count
+
+    # Per-extension "found" tally (post-filter — what we actually consider).
+    by_ext: dict[str, dict[str, int]] = {}
+    for e in manifest:
+        by_ext.setdefault(_file_ext(e.filename), {"found": 0, "uploaded": 0, "failed": 0})["found"] += 1
+    result.by_ext = by_ext
 
     if show_progress:
         parts = []
@@ -314,8 +343,11 @@ def _run_sync_inner(
 
     def _upload_one(
         i: int, entry: dict, change_type: str, progress: Progress | None, task_id: Any,
-    ) -> str | None:
-        """Upload a single file with retry. Returns error string or None."""
+    ) -> tuple[str, str]:
+        """Upload a single file with retry. Returns (outcome, filename).
+
+        ``outcome`` is "added"/"modified" on success, otherwise an error string.
+        """
         filename = entry["filename"]
         path = entry.get("path", "")
         display = f"{path}/{filename}" if path else filename
@@ -325,7 +357,7 @@ def _run_sync_inner(
 
         manifest_entry = manifest_by_key.get((path, filename))
         if not manifest_entry:
-            return f"File not in manifest: {display}"
+            return f"File not in manifest: {display}", filename
 
         last_err: Exception | None = None
         for attempt in range(3):
@@ -341,7 +373,7 @@ def _run_sync_inner(
                 )
                 if progress is not None:
                     progress.update(task_id, advance=1, description=f"[cyan]{display}[/cyan]")
-                return change_type  # success
+                return change_type, filename  # success
             except httpx.HTTPStatusError as e:
                 if e.response.status_code >= 500 and attempt < 2:
                     time.sleep(2 ** attempt)
@@ -357,16 +389,30 @@ def _run_sync_inner(
             progress.update(task_id, advance=1, description=f"[red]✗ {display}[/red]")
         else:
             click.echo(click.style(f"  ✗ {display}: {last_err}", fg="red"), err=True)
-        return f"{display}: {last_err}"
+        return f"{display}: {last_err}", filename
 
-    def _tally(outcome: str | None) -> None:
-        """Update result counters from an upload outcome."""
+    _done = 0
+    _total = len(files_to_upload)
+
+    def _tally(res: tuple[str, str]) -> None:
+        """Update result counters from an (outcome, filename) upload result."""
+        nonlocal _done
+        outcome, filename = res
+        ext_bucket = by_ext.setdefault(
+            _file_ext(filename), {"found": 0, "uploaded": 0, "failed": 0}
+        )
         if outcome == "added":
             result.added += 1
+            ext_bucket["uploaded"] += 1
         elif outcome == "modified":
             result.modified += 1
-        elif outcome is not None:
-            result.errors.append(outcome)
+            ext_bucket["uploaded"] += 1
+        else:
+            result.errors.append(outcome)  # type: ignore[union-attr]
+            ext_bucket["failed"] += 1
+        _done += 1
+        if progress_callback is not None:
+            progress_callback(_done, _total)
 
     if show_progress:
         progress = Progress(
