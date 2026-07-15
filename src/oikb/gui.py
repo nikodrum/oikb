@@ -87,18 +87,28 @@ class OikbApp:
             row=4, column=2, sticky="e", padx=(8, 0), pady=4
         )
 
-        # 4. Кнопка синхронізації + прогрес ------------------------
+        # 4. Дозволені розширення (необов'язково) ------------------
+        ttk.Label(body, text="Розширення:").grid(row=5, column=0, sticky="w", pady=4)
+        self.exts_var = tk.StringVar(value=str(get_config("gui_exts") or ""))
+        ttk.Entry(body, textvariable=self.exts_var).grid(row=5, column=1, columnspan=2, sticky="ew", pady=4)
+        ttk.Label(
+            body,
+            text="Синхронізувати лише ці типи, напр. .pdf .md .txt (порожньо = усі файли).",
+            foreground="gray",
+        ).grid(row=6, column=1, columnspan=2, sticky="w")
+
+        # 5. Кнопка синхронізації + прогрес ------------------------
         self.sync_btn = ttk.Button(body, text="Синхронізувати", command=self.on_sync)
-        self.sync_btn.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(12, 4))
+        self.sync_btn.grid(row=7, column=0, columnspan=3, sticky="ew", pady=(12, 4))
 
         self.progress = ttk.Progressbar(body, mode="determinate")
-        self.progress.grid(row=6, column=0, columnspan=3, sticky="ew", pady=(0, 4))
+        self.progress.grid(row=8, column=0, columnspan=3, sticky="ew", pady=(0, 4))
 
         # Журнал / статистика --------------------------------------
-        ttk.Label(body, text="Результат:").grid(row=7, column=0, sticky="w", pady=(8, 2))
+        ttk.Label(body, text="Результат:").grid(row=9, column=0, sticky="w", pady=(8, 2))
         self.log = scrolledtext.ScrolledText(body, height=14, state="disabled", wrap="word")
-        self.log.grid(row=8, column=0, columnspan=3, sticky="nsew")
-        body.rowconfigure(8, weight=1)
+        self.log.grid(row=10, column=0, columnspan=3, sticky="nsew")
+        body.rowconfigure(10, weight=1)
 
         self.status_var = tk.StringVar(value="Готово")
         ttk.Label(root, textvariable=self.status_var, anchor="w", padding=(12, 3)).pack(
@@ -167,6 +177,19 @@ class OikbApp:
         text = self.kb_var.get().strip()
         return self.kb_map.get(text, text)
 
+    def _include_globs(self) -> list[str] | None:
+        """Поле розширень → список glob-шаблонів (None, якщо порожнє)."""
+        raw = self.exts_var.get().replace(",", " ").split()
+        globs = []
+        for tok in raw:
+            tok = tok.strip().lstrip("*")
+            if not tok:
+                continue
+            if not tok.startswith("."):
+                tok = "." + tok
+            globs.append(f"*{tok}")
+        return globs or None
+
     # ── дії ──────────────────────────────────────────────────────
 
     def _choose_dir(self) -> None:
@@ -192,19 +215,25 @@ class OikbApp:
             messagebox.showerror("oikb", f"Теку не знайдено:\n{directory}")
             return
 
+        include = self._include_globs()
+
         # Зберегти для наступного запуску.
         set_config("url", url)
         set_config("token", token)
         set_config("gui_kb_id", kb_id)
         set_config("gui_dir", directory)
+        set_config("gui_exts", self.exts_var.get().strip())
 
         self._set_busy(True)
         self._clear_log()
         self.progress.configure(mode="determinate", value=0, maximum=100)
         self.status_var.set("Підготовка…")
-        self._log(f"Синхронізація теки:\n  {directory}\n→ база знань {kb_id}\n\n")
+        self._log(f"Синхронізація теки:\n  {directory}\n→ база знань {kb_id}\n")
+        if include:
+            self._log(f"Лише розширення: {', '.join(g[1:] for g in include)}\n")
+        self._log("\n")
 
-        from oikb.sync import run_sync
+        from oikb.sync import run_sync, build_manifest_filter
         from oikb.connectors.filesystem import FilesystemConnector
 
         def worker() -> None:
@@ -222,6 +251,7 @@ class OikbApp:
                     kb_id=kb_id,
                     quiet=True,
                     progress_callback=cb,
+                    manifest_filter=build_manifest_filter(include=include),
                 )
                 after = _kb_file_count(client, kb_id)
                 self.q.put(("sync_done", result, before, after))
