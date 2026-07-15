@@ -42,6 +42,7 @@ class OikbApp:
         self.q: queue.Queue = queue.Queue()
         self.busy = False
         self.kb_map: dict[str, str] = {}  # назва → id
+        self.allowed_exts: list[str] = []  # дозволені сервером (порожньо = усі)
 
         root.title(f"oikb {__version__} — синхронізація")
         root.geometry("680x620")
@@ -86,15 +87,12 @@ class OikbApp:
             row=4, column=2, sticky="e", padx=(8, 0), pady=4
         )
 
-        # 4. Дозволені розширення (необов'язково) ------------------
-        ttk.Label(body, text="Розширення:").grid(row=5, column=0, sticky="w", pady=4)
-        self.exts_var = tk.StringVar(value=str(get_config("gui_exts") or ""))
-        ttk.Entry(body, textvariable=self.exts_var).grid(row=5, column=1, columnspan=2, sticky="ew", pady=4)
+        # 4. Дозволені розширення (з налаштувань Open WebUI) -------
+        ttk.Label(body, text="Розширення:").grid(row=5, column=0, sticky="nw", pady=4)
+        self.ext_status = tk.StringVar(value="")
         ttk.Label(
-            body,
-            text="Синхронізувати лише ці типи, напр. .pdf .md .txt (порожньо = усі файли).",
-            foreground="gray",
-        ).grid(row=6, column=1, columnspan=2, sticky="w")
+            body, textvariable=self.ext_status, foreground="gray", wraplength=430, justify="left"
+        ).grid(row=5, column=1, columnspan=2, sticky="w", pady=4)
 
         # 5. Кнопка синхронізації + прогрес ------------------------
         self.sync_btn = ttk.Button(body, text="Синхронізувати", command=self.on_sync)
@@ -144,12 +142,17 @@ class OikbApp:
             try:
                 with OikbClient(url, token) as client:
                     kbs = client.list_knowledge_bases()
+                    try:
+                        allowed = client.get_allowed_file_extensions()
+                    except Exception:
+                        allowed = []  # немає доступу до конфігу — не обмежуємо
                 items = [
                     (str(kb.get("name") or "(без назви)"), str(kb.get("id")))
                     for kb in kbs
                     if kb.get("id")
                 ]
                 self.q.put(("kb_list", items))
+                self.q.put(("allowed_exts", allowed))
             except Exception as exc:
                 self.q.put(("kb_error", str(exc)))
 
@@ -177,17 +180,20 @@ class OikbApp:
         return self.kb_map.get(text, text)
 
     def _include_globs(self) -> list[str] | None:
-        """Поле розширень → список glob-шаблонів (None, якщо порожнє)."""
-        raw = self.exts_var.get().replace(",", " ").split()
-        globs = []
-        for tok in raw:
-            tok = tok.strip().lstrip("*")
-            if not tok:
-                continue
-            if not tok.startswith("."):
-                tok = "." + tok
-            globs.append(f"*{tok}")
-        return globs or None
+        """Glob-шаблони з дозволених сервером розширень (None = без обмежень)."""
+        if not self.allowed_exts:
+            return None
+        return [f"*.{e}" for e in self.allowed_exts]
+
+    def _apply_allowed_exts(self, exts: list[str]) -> None:
+        self.allowed_exts = exts
+        if exts:
+            self.ext_status.set(
+                "Сервер дозволяє лише: " + ", ".join(exts)
+                + ". Інші типи буде пропущено."
+            )
+        else:
+            self.ext_status.set("Сервер приймає всі типи файлів (обмежень немає).")
 
     # ── дії ──────────────────────────────────────────────────────
 
@@ -221,7 +227,6 @@ class OikbApp:
         set_config("token", token)
         set_config("gui_kb_id", kb_id)
         set_config("gui_dir", directory)
-        set_config("gui_exts", self.exts_var.get().strip())
 
         self._set_busy(True)
         self._clear_log()
@@ -229,7 +234,7 @@ class OikbApp:
         self.status_var.set("Підготовка…")
         self._log(f"Синхронізація теки:\n  {directory}\n→ база знань {kb_id}\n")
         if include:
-            self._log(f"Лише розширення: {', '.join(g[1:] for g in include)}\n")
+            self._log(f"Лише дозволені сервером розширення: {', '.join(self.allowed_exts)}\n")
         self._log("\n")
 
         from oikb.sync import run_sync, build_manifest_filter
@@ -269,6 +274,8 @@ class OikbApp:
                 kind, *payload = self.q.get_nowait()
                 if kind == "kb_list":
                     self._apply_kb_list(payload[0])
+                elif kind == "allowed_exts":
+                    self._apply_allowed_exts(payload[0])
                 elif kind == "kb_error":
                     self.kb_status.set(f"Не вдалося завантажити список: {payload[0]}")
                 elif kind == "progress":

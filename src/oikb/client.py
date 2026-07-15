@@ -154,6 +154,22 @@ class OikbClient:
 
         return all_items
 
+    def get_allowed_file_extensions(self) -> list[str]:
+        """Server-configured allowed upload extensions (lowercased, no dot).
+
+        Reads ALLOWED_FILE_EXTENSIONS from GET /retrieval/config. An empty
+        list means the server accepts all file types. Requires a token with
+        access to the retrieval config; callers should treat failures as
+        "no restriction".
+        """
+        resp = self._http.get("/retrieval/config")
+        resp.raise_for_status()
+        data = resp.json()
+        exts = data.get("ALLOWED_FILE_EXTENSIONS")
+        if not isinstance(exts, list):
+            return []
+        return [str(e).strip().lower().lstrip(".") for e in exts if str(e).strip()]
+
     def get_kb(self, kb_id: str) -> dict[str, Any]:
         """GET /knowledge/{id} — get KB info."""
         resp = self._http.get(f"/knowledge/{kb_id}")
