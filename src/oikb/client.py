@@ -127,15 +127,32 @@ class OikbClient:
     def list_knowledge_bases(self) -> list[dict[str, Any]]:
         """GET /knowledge/ — list all Knowledge Bases the user can access.
 
-        Each item includes at least ``id`` and ``name``.
+        The Open WebUI endpoint paginates (``{"items": [...], "total": N}``,
+        ~30 per page via ``?page=N``); some builds return a bare list instead.
+        This walks every page and returns the combined list. Each item
+        includes at least ``id`` and ``name``.
         """
-        resp = self._http.get("/knowledge/")
-        resp.raise_for_status()
-        data = resp.json()
-        # Open WebUI returns a bare list; be defensive about a wrapped shape.
-        if isinstance(data, dict):
-            data = data.get("knowledge") or data.get("data") or []
-        return data if isinstance(data, list) else []
+        all_items: list[dict[str, Any]] = []
+        page = 1
+        while page <= 1000:  # hard cap against a misbehaving server
+            resp = self._http.get("/knowledge/", params={"page": page})
+            resp.raise_for_status()
+            data = resp.json()
+
+            if isinstance(data, list):
+                return data  # non-paginated server — the whole list at once
+
+            items = data.get("items") or data.get("knowledge") or data.get("data") or []
+            if not items:
+                break
+            all_items.extend(items)
+
+            total = data.get("total")
+            if total is not None and len(all_items) >= total:
+                break
+            page += 1
+
+        return all_items
 
     def get_kb(self, kb_id: str) -> dict[str, Any]:
         """GET /knowledge/{id} — get KB info."""
