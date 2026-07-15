@@ -87,14 +87,7 @@ class OikbApp:
             row=4, column=2, sticky="e", padx=(8, 0), pady=4
         )
 
-        # 4. Дозволені розширення (з налаштувань Open WebUI) -------
-        ttk.Label(body, text="Розширення:").grid(row=5, column=0, sticky="nw", pady=4)
-        self.ext_status = tk.StringVar(value="")
-        ttk.Label(
-            body, textvariable=self.ext_status, foreground="gray", wraplength=430, justify="left"
-        ).grid(row=5, column=1, columnspan=2, sticky="w", pady=4)
-
-        # 5. Кнопка синхронізації + прогрес ------------------------
+        # 4. Кнопка синхронізації + прогрес ------------------------
         self.sync_btn = ttk.Button(body, text="Синхронізувати", command=self.on_sync)
         self.sync_btn.grid(row=7, column=0, columnspan=3, sticky="ew", pady=(12, 4))
 
@@ -186,14 +179,9 @@ class OikbApp:
         return [f"*.{e}" for e in self.allowed_exts]
 
     def _apply_allowed_exts(self, exts: list[str]) -> None:
+        # Дотримуємось налаштувань сервера мовчки: якщо він обмежує типи,
+        # інші файли буде пропущено (це видно у статистиці «Пропущено фільтром»).
         self.allowed_exts = exts
-        if exts:
-            self.ext_status.set(
-                "Сервер дозволяє лише: " + ", ".join(exts)
-                + ". Інші типи буде пропущено."
-            )
-        else:
-            self.ext_status.set("Сервер приймає всі типи файлів (обмежень немає).")
 
     # ── дії ──────────────────────────────────────────────────────
 
