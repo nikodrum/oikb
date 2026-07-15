@@ -160,6 +160,23 @@ class OikbClient:
         resp.raise_for_status()
         return resp.json()
 
+    def get_kb_file_count(self, kb_id: str) -> int:
+        """Number of files currently in a KB.
+
+        Uses GET /knowledge/{id}/files, whose ``total`` field is the true
+        count. (GET /knowledge/{id} returns ``files: null`` on current Open
+        WebUI builds, so it cannot be used for this.)
+        """
+        resp = self._http.get(f"/knowledge/{kb_id}/files", params={"page": 1})
+        resp.raise_for_status()
+        data = resp.json()
+        if isinstance(data, dict):
+            if data.get("total") is not None:
+                return int(data["total"])
+            items = data.get("items") or data.get("files") or []
+            return len(items)
+        return len(data) if isinstance(data, list) else 0
+
     def list_kb_files(self, kb_id: str) -> list[dict[str, Any]]:
         """GET /knowledge/{id}/files — list files in a KB."""
         resp = self._http.get(f"/knowledge/{kb_id}")

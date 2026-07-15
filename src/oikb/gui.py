@@ -31,8 +31,7 @@ POLL_MS = 100
 def _kb_file_count(client: OikbClient, kb_id: str) -> int | None:
     """Скільки файлів зараз у базі знань (None, якщо не вдалося дізнатись)."""
     try:
-        info = client.get_kb(kb_id)
-        return len(info.get("files") or [])
+        return client.get_kb_file_count(kb_id)
     except Exception:
         return None
 
@@ -325,9 +324,10 @@ class OikbApp:
             gap = net_expected - net_actual
             if gap > 0:
                 self._log(
-                    f"\n⚠ {gap} файл(ів) завантажено, але не з'явились у базі.\n"
-                    "  Імовірно, сервер не зміг обробити вміст: непідтримуваний\n"
-                    "  формат, порожній/пошкоджений файл або збій вилучення тексту.\n"
+                    f"\n⚠ Кількість файлів у базі зросла на {net_actual}, "
+                    f"хоча завантажено {net_expected}.\n"
+                    f"  {gap} файл(ів) могли бути дублікатами (той самий вміст уже\n"
+                    "  є в базі) або сервер не зміг обробити їхній вміст.\n"
                 )
 
         # Пояснення розриву «знайдено» ↔ «завантажено».
