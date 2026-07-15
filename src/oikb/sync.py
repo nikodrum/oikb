@@ -43,6 +43,8 @@ class SyncResult:
     # why "N files found" differs from "M files uploaded".
     found: int = 0
     skipped_filter: int = 0
+    # Entries the connector ignored while scanning (hidden/built-in/.oikbignore).
+    scan_skipped: int = 0
     # Per-extension breakdown: {".pdf": {"found": N, "uploaded": N, "failed": N}}.
     by_ext: dict[str, dict[str, int]] | None = None
 
@@ -205,6 +207,7 @@ def _run_sync_inner(
             click.echo(f"  {len(manifest)} files found", err=True)
 
     result.found = len(manifest)
+    result.scan_skipped = getattr(connector, "scan_skipped", 0)
 
     # ── 2. Apply filter ────────────────────────────────────────
     if manifest_filter:

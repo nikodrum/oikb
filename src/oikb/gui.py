@@ -299,6 +299,7 @@ class OikbApp:
 
         rows = [
             ("Знайдено у теці", result.found),
+            ("Пропущено під час сканування", result.scan_skipped),
             ("Пропущено фільтром/розміром", result.skipped_filter),
             ("Уже в базі (без змін)", result.unmodified),
             ("Додано", result.added),

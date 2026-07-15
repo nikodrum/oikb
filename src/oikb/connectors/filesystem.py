@@ -53,6 +53,8 @@ class FilesystemConnector(BaseConnector):
         self.root = Path(root).resolve()
         self.builtin_ignore = ignore or DEFAULT_IGNORE
         self.ignore_patterns = load_ignore_patterns(self.root)
+        # How many entries the last walk skipped (hidden/built-in/.oikbignore).
+        self.scan_skipped = 0
 
         if not self.root.is_dir():
             raise FileNotFoundError(f"Not a directory: {self.root}")
@@ -60,6 +62,7 @@ class FilesystemConnector(BaseConnector):
     def build_manifest(self) -> list[ManifestEntry]:
         """Recursively walk root, computing SHA-256 for each file."""
         entries: list[ManifestEntry] = []
+        self.scan_skipped = 0
         self._walk(self.root, "", entries)
         # Sort for deterministic output.
         entries.sort(key=lambda e: e.display_path)
@@ -75,6 +78,7 @@ class FilesystemConnector(BaseConnector):
         for child in sorted(directory.iterdir()):
             # Always skip built-in ignores.
             if child.name in self.builtin_ignore or child.name.startswith("."):
+                self.scan_skipped += 1
                 continue
 
             relative_path = (
@@ -85,6 +89,7 @@ class FilesystemConnector(BaseConnector):
             if self.ignore_patterns and should_ignore(
                 relative_path, child.name, child.is_dir(), self.ignore_patterns
             ):
+                self.scan_skipped += 1
                 continue
 
             if child.is_dir():
