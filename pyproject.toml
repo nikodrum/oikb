@@ -49,6 +49,9 @@ dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "respx>=0.21"]
 [project.scripts]
 oikb = "oikb.cli:cli"
 
+[project.gui-scripts]
+oikb-gui = "oikb.gui:main"
+
 [build-system]
 requires = ["uv_build>=0.8.0,<0.9"]
 build-backend = "uv_build"

@@ -219,6 +219,23 @@ oikb history --errors           # Failed syncs only
 oikb history --clear --days 7   # Prune old entries
 ```
 
+## Windows App
+
+A minimal GUI (`oikb-gui`, Ukrainian interface) wraps the CLI for terminal-free use on Windows. Four steps: enter your Open WebUI URL and API key, enter the Knowledge Base ID, choose a folder, click **Синхронізувати** (Sync). Output streams into a log pane, and the fields are remembered between launches.
+
+**Standalone exe (no Python needed):** download `oikb-gui.exe` from the [Releases](../../releases) page (or the `Build Windows GUI` workflow's artifacts). Double-click to run.
+
+**Build it yourself** on any Windows machine:
+
+```
+pip install .[all] pyinstaller
+pyinstaller oikb-gui.spec
+```
+
+The exe bundles all connectors (`oikb[all]`); install plain `.` instead for a smaller binary with local-dir/GitHub sources only.
+
+**With Python installed:** `pip install oikb` also provides the `oikb-gui` command directly.
+
 ## GitHub Actions
 
 ```yaml

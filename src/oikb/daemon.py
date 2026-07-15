@@ -446,8 +446,13 @@ async def _run_scheduler(entries: list[dict]) -> None:
     _shutdown_event = asyncio.Event()
 
     loop = asyncio.get_event_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, _shutdown_event.set)
+    try:
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, _shutdown_event.set)
+    except NotImplementedError:
+        # Windows: asyncio event loops don't support add_signal_handler.
+        # Shutdown is handled by KeyboardInterrupt / process termination.
+        pass
 
     tasks = [asyncio.create_task(_schedule_entry(e)) for e in entries]
 
