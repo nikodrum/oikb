@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.0] - 2026-07-16
+
+### Added
+
+- **Windows GUI (`oikb-gui`)** — a lightweight Tkinter app (Ukrainian interface) for syncing a local folder to a Knowledge Base without a terminal: enter the Open WebUI URL and API key, pick the Knowledge Base by name from a dropdown, choose a folder, click **Синхронізувати**. Distributed as a standalone `oikb-gui.exe` (no Python required) built on `windows-latest` via GitHub Actions; also installable as an `oikb-gui` entry point.
+- **Detailed post-sync statistics** in the GUI: a funnel (found / skipped during scan / skipped by filter / already in KB / added / updated / deleted / failed), a **per-extension breakdown** (found/uploaded/failed), and a before-vs-after KB file count that flags files uploaded but not landed (dedup or server-side processing failure).
+- `OikbClient.list_knowledge_bases()` — list Knowledge Bases, paging through the `{items, total}` response.
+- `OikbClient.get_kb_file_count()` — accurate KB file count via `GET /knowledge/{id}/files`.
+- `OikbClient.get_allowed_file_extensions()` — read the server's `ALLOWED_FILE_EXTENSIONS` setting; the GUI honors it automatically.
+- `SyncResult` gains `found`, `skipped_filter`, `scan_skipped`, and `by_ext`; `run_sync()` gains an optional `progress_callback`.
+- `python -m oikb` entry point.
+
+### Fixed
+
+- `oikb daemon` no longer crashes on Windows — `loop.add_signal_handler` (unsupported on Windows asyncio loops) is now guarded against `NotImplementedError`.
+
 ## [0.3.6] - 2026-05-28
 
 ### Added
